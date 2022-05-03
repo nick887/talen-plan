@@ -1,0 +1,7 @@
+{"op":"Set","key":"a","value":"b"}
+{"op":"Set","key":"c","value":"a"}
+{"op":"Set","key":"b","value":"c"}
+{"op":"Rm","key":"z","value":null}
+{"op":"Rm","key":"z","value":null}
+{"op":"Rm","key":"z","value":null}
+{"op":"Rm","key":"z","value":null}
