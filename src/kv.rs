@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, LineWriter, Seek, Write};
 use std::string::String;
 use std::time::SystemTime;
 use std::{collections::HashMap, path::PathBuf};
+const THRESHOLD: usize = 1000;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Operation {
@@ -100,6 +101,23 @@ impl KvStore {
                 None => Err(KvStoreError::NotFoundKey)?,
             },
         }
+    }
+    // compaction on condition
+    fn compaction(&mut self) -> Result<()> {
+        if self.map.len() > THRESHOLD {
+            self.file.seek(SeekFrom::Start(0))?;
+            let mut writer = LineWriter::new(&mut self.file);
+            for (key, value) in self.map.into_iter() {
+                let s = serde_json::to_string(&Command {
+                    op: Operation::Set,
+                    key: Some(key),
+                    value: Some(value),
+                })?;
+                writer.write(buf)
+            }
+        } else {
+        }
+        Ok(())
     }
 
     // write the append log and update map
