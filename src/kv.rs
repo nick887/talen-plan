@@ -1,4 +1,5 @@
-use anyhow::{Result, };
+use crate::error::KvStoreError;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::SeekFrom;
@@ -42,14 +43,26 @@ impl KvStore {
     //         path: String::from(""),
     //     }
     // }
-    pub fn open(
-        path: impl Into<PathBuf> + std::convert::AsRef<std::path::Path>,
-    ) -> Result<KvStore> {
+    pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
+        let mut p = path.into();
+        println!("{:?}",p.as_path());
+
         let f = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(path)?;
+            .open(&p)?;
+
+        println!("yes");
+        if f.metadata()?.is_dir() {
+            p.push(r"/log");
+            println!("{:?}",p.as_path());
+            let f = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&p)?;
+        }
 
         Ok(KvStore {
             _map: HashMap::new(),
@@ -67,11 +80,12 @@ impl KvStore {
         })?;
         writer.write(&s.as_bytes())?;
         writer.write_all(b"\n")?;
+        writer.flush()?;
         Ok(())
     }
 
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        match self.getKey(key) {
+        match self.get_key(key) {
             Err(err) => {
                 return Err(err);
             }
@@ -83,27 +97,28 @@ impl KvStore {
     }
 
     pub fn remove(&mut self, key: String) -> Result<()> {
-        match self.getKey(key) {
+        match self.get_key(key) {
             Err(err) => {
                 return Err(err);
             }
             Ok(cmd) => match cmd {
-                Some(cmd) => {
+                Some(mut cmd) => {
                     self.file.seek(SeekFrom::End(0))?;
                     let mut writer = LineWriter::new(&self.file);
+                    cmd.op = Operation::Rm;
                     let s = serde_json::to_string(&cmd)?;
                     writer.write(s.as_bytes())?;
                     writer.write(b"\n")?;
                     return Ok(());
                 }
                 None => {
-                    return Ok(());
+                    return Err(KvStoreError::NotFoundKey)?;
                 }
             },
         }
     }
 
-    fn getKey(&mut self, key: String) -> Result<Option<Command>> {
+    fn get_key(&mut self, key: String) -> Result<Option<Command>> {
         let reader = BufReader::new(&self.file);
         for line in reader.lines() {
             let line = line.unwrap();

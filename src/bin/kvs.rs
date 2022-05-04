@@ -27,6 +27,7 @@ fn main() -> Result<()> {
     match matches.subcommand() {
         Some(("get", sub)) => match kvs.get(sub.value_of("KEY").unwrap().to_string()) {
             Err(_err) => {
+               //  println!("{}",err);
                 exit(1);
             }
             Ok(val) => match val {
@@ -54,10 +55,10 @@ fn main() -> Result<()> {
             }
         },
         Some(("rm", sub)) => match kvs.remove(sub.value_of("KEY").unwrap().to_string()) {
-            Err(_err) => {
-                println!("Key not found");
+            Err(err) => {
+                // println!("Key not found");
+                println!("{}", err);
                 exit(1);
-                // println!("{}", err);
             }
             Ok(_) => {
                 exit(0);

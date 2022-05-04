@@ -9,6 +9,6 @@ pub enum KvStoreError {
     //  SetError,
     //  #[error("get error")]
     //  GetError,
-    #[error("not found key")]
+    #[error("Key not found")]
     NotFoundKey,
 }

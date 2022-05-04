@@ -5,3 +5,8 @@
 {"op":"Rm","key":"z","value":null}
 {"op":"Rm","key":"z","value":null}
 {"op":"Rm","key":"z","value":null}
+{"op":"Set","key":"key1","value":"val1"}
+{"op":"Set","key":"key1","value":"val1"}
+{"op":"Set","key":"key1","value":"val1"}
+{"op":"Set","key":"key1","value":"val1"}
+{"op":"Rm","key":"key1","value":"val1"}
