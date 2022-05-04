@@ -286,6 +286,7 @@ fn compaction() -> Result<()> {
             current_size = new_size;
             continue;
         }
+    
         // Compaction triggered.
 
         drop(store);

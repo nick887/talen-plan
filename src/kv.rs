@@ -5,9 +5,9 @@ use std::fs::{File, OpenOptions};
 use std::io::SeekFrom;
 use std::io::{BufRead, BufReader, LineWriter, Seek, Write};
 use std::string::String;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, path::PathBuf};
-const THRESHOLD: usize = 1000;
+const THRESHOLD: usize = 999;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Operation {
@@ -34,16 +34,16 @@ struct Command {
 pub struct KvStore {
     file: File,
     map: HashMap<String, u64>,
+    lastCompactionTime: u64,
+    path: PathBuf,
 }
 
 impl KvStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
         let mut p = path.into();
-        // println!("{:?}",p.as_path());
         let mut f = File::open(&p)?;
         if f.metadata()?.is_dir() {
             p.push(r"log");
-            // println!("{:?}", p.as_path());
             f = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -58,7 +58,15 @@ impl KvStore {
         }
 
         let map = KvStore::file_map(&mut f)?;
-        Ok(KvStore { file: f, map })
+        Ok(KvStore {
+            path: p,
+            file: f,
+            map,
+            lastCompactionTime: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        })
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
@@ -103,25 +111,50 @@ impl KvStore {
         }
     }
     // compaction on condition
-    fn compaction(&mut self) -> Result<()> {
-        if self.map.len() > THRESHOLD {
-            self.file.seek(SeekFrom::Start(0))?;
-            let mut writer = LineWriter::new(&mut self.file);
-            for (key, value) in self.map.into_iter() {
-                let s = serde_json::to_string(&Command {
-                    op: Operation::Set,
-                    key: Some(key),
-                    value: Some(value),
-                })?;
-                writer.write(buf)
+    pub fn compaction(&mut self) -> Result<()> {
+        if SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - self.lastCompactionTime
+            > 1
+        {
+            let mut all_map = HashMap::new();
+            for (key, value) in self.map.iter() {
+                let mut buf = String::new();
+                self.file.seek(SeekFrom::Start(*value))?;
+                let mut reader = BufReader::new(&mut self.file);
+                reader.read_line(&mut buf)?;
+                let cmd: Command = serde_json::from_str(&buf)?;
+                all_map.insert(key.clone(), cmd);
             }
-        } else {
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&self.path)?;
+            // to the start of file
+            self.file.seek(SeekFrom::Start(0))?;
+            let mut pos = 0;
+            let mut writer = LineWriter::new(&mut self.file);
+            for (key, value) in all_map.into_iter() {
+                let s = serde_json::to_string(&value)?;
+                writer.write(s.as_bytes())?;
+                writer.write(&[0xA])?;
+                self.map.insert(key, pos);
+                pos += s.bytes().len() as u64 + 1;
+            }
+            self.lastCompactionTime = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
         }
         Ok(())
     }
 
     // write the append log and update map
     fn update(&mut self, cmd: Command) -> Result<()> {
+        // println!("{:?}", cmd);
+        self.compaction()?;
         let pos = self.file.seek(SeekFrom::End(0))?;
         let mut writer = LineWriter::new(&mut self.file);
         let s = serde_json::to_string(&cmd)?;
