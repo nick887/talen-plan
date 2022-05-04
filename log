@@ -1,12 +1,3 @@
-{"op":"Set","key":"a","value":"b"}
-{"op":"Set","key":"c","value":"a"}
-{"op":"Set","key":"b","value":"c"}
-{"op":"Rm","key":"z","value":null}
-{"op":"Rm","key":"z","value":null}
-{"op":"Rm","key":"z","value":null}
-{"op":"Rm","key":"z","value":null}
 {"op":"Set","key":"key1","value":"val1"}
-{"op":"Set","key":"key1","value":"val1"}
-{"op":"Set","key":"key1","value":"val1"}
-{"op":"Set","key":"key1","value":"val1"}
-{"op":"Rm","key":"key1","value":"val1"}
+{"op":"Set","key":"key2","value":"val2"}
+{"op":"Rm","key":"key1","value":null}

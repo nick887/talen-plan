@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         .subcommand(Command::new("rm").about("rm by key").arg(arg!([KEY])))
         .get_matches();
 
-    let mut kvs = KvStore::open("log")?;
+    let mut kvs = KvStore::open(".")?;
     match matches.subcommand() {
         Some(("get", sub)) => match kvs.get(sub.value_of("KEY").unwrap().to_string()) {
             Err(_err) => {

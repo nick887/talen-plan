@@ -31,56 +31,41 @@ struct Command {
 }
 
 pub struct KvStore {
-    _map: HashMap<String, String>,
-    // r_file: File,
     file: File,
+    map: HashMap<String, u64>,
 }
 
 impl KvStore {
-    // pub fn new() -> KvStore {
-    //     KvStore {
-    //         map: HashMap::new(),
-    //         path: String::from(""),
-    //     }
-    // }
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
         let mut p = path.into();
-        println!("{:?}",p.as_path());
-
-        let f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&p)?;
-
-        println!("yes");
+        // println!("{:?}",p.as_path());
+        let mut f = File::open(&p)?;
         if f.metadata()?.is_dir() {
-            p.push(r"/log");
-            println!("{:?}",p.as_path());
-            let f = OpenOptions::new()
+            p.push(r"log");
+            // println!("{:?}", p.as_path());
+            f = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&p)?;
+        } else {
+            f = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(&p)?;
         }
 
-        Ok(KvStore {
-            _map: HashMap::new(),
-            file: f,
-        })
+        let map = KvStore::file_map(&mut f)?;
+        Ok(KvStore { file: f, map })
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.file.seek(SeekFrom::End(0))?;
-        let mut writer = LineWriter::new(&self.file);
-        let s = serde_json::to_string(&Command {
+        self.update(Command {
             op: Operation::Set,
             key: Some(key),
             value: Some(value),
         })?;
-        writer.write(&s.as_bytes())?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
         Ok(())
     }
 
@@ -96,38 +81,92 @@ impl KvStore {
         }
     }
 
+    // remove the key in map and append log
     pub fn remove(&mut self, key: String) -> Result<()> {
         match self.get_key(key) {
             Err(err) => {
                 return Err(err);
             }
             Ok(cmd) => match cmd {
-                Some(mut cmd) => {
-                    self.file.seek(SeekFrom::End(0))?;
-                    let mut writer = LineWriter::new(&self.file);
-                    cmd.op = Operation::Rm;
-                    let s = serde_json::to_string(&cmd)?;
-                    writer.write(s.as_bytes())?;
-                    writer.write(b"\n")?;
-                    return Ok(());
+                Some(cmd) => {
+                    // cmd must be like set key val
+                    self.update(Command {
+                        op: Operation::Rm,
+                        key: cmd.key,
+                        value: None,
+                    })?;
+                    Ok(())
                 }
-                None => {
-                    return Err(KvStoreError::NotFoundKey)?;
-                }
+                None => Err(KvStoreError::NotFoundKey)?,
             },
         }
     }
 
+    // write the append log and update map
+    fn update(&mut self, cmd: Command) -> Result<()> {
+        let pos = self.file.seek(SeekFrom::End(0))?;
+        let mut writer = LineWriter::new(&mut self.file);
+        let s = serde_json::to_string(&cmd)?;
+        match cmd.op {
+            Operation::Set => {
+                writer.write(s.as_bytes())?;
+                self.map.insert(cmd.key.unwrap(), pos);
+            }
+            Operation::Rm => {
+                writer.write(s.as_bytes())?;
+                self.map.remove(&cmd.key.unwrap());
+            }
+            _ => {}
+        }
+        writer.write(&[0xA])?;
+        Ok(())
+    }
+
+    // get pos from map and read command from file
     fn get_key(&mut self, key: String) -> Result<Option<Command>> {
-        let reader = BufReader::new(&self.file);
-        for line in reader.lines() {
-            let line = line.unwrap();
-            let cmd: Command = serde_json::from_str(&line)?;
-            let k1 = cmd.key.clone().unwrap();
-            if key == k1 {
-                return Ok(Some(cmd));
+        if self.map.contains_key(&key) {
+            let cmd = KvStore::get_cmd(&mut self.file, *self.map.get(&key).unwrap())?;
+            return Ok(Some(cmd));
+        } else {
+            return Ok(None);
+        }
+    }
+
+    // read command from file
+    fn get_cmd(file: &mut File, pos: u64) -> Result<Command> {
+        file.seek(SeekFrom::Start(pos))?;
+        let mut reader = BufReader::new(file);
+        let mut buf = String::new();
+        reader.read_line(&mut buf)?;
+        let cmd = serde_json::from_str(&buf)?;
+        Ok(cmd)
+    }
+
+    // read entire log file and flush to map
+    fn file_map(file: &mut File) -> Result<HashMap<String, u64>> {
+        let mut map: HashMap<String, u64> = HashMap::new();
+        file.seek(SeekFrom::Start(0))?;
+        let mut reader = BufReader::new(file);
+        loop {
+            let mut buf = String::new();
+            let n = reader.read_line(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+
+            let cmd: Command = serde_json::from_str(&buf)?;
+            match cmd.op {
+                Operation::Set => {
+                    let pos = reader.stream_position()?;
+
+                    map.insert(cmd.key.unwrap(), pos - buf.as_bytes().len() as u64);
+                }
+                Operation::Rm => {
+                    map.remove(&cmd.key.unwrap());
+                }
+                _ => {}
             }
         }
-        Ok(None)
+        Ok(map)
     }
 }
