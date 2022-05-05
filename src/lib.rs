@@ -9,4 +9,5 @@ pub mod kv;
 pub mod error;
 pub mod kv_engine;
 pub mod proc;
+pub mod ioutil;
 
