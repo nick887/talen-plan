@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, LineWriter, Seek, Write};
 use std::string::String;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, path::PathBuf};
-const THRESHOLD: usize = 999;
+use crate::kv_engine::KvsEngine;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Operation {
@@ -34,8 +34,52 @@ struct Command {
 pub struct KvStore {
     file: File,
     map: HashMap<String, u64>,
-    lastCompactionTime: u64,
+    last_compaction_time: u64,
     path: PathBuf,
+}
+
+impl KvsEngine for KvStore {
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        self.update(Command {
+            op: Operation::Set,
+            key: Some(key),
+            value: Some(value),
+        })?;
+        Ok(())
+    }
+
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        match self.get_key(key) {
+            Err(err) => {
+                return Err(err);
+            }
+            Ok(cmd) => match cmd {
+                Some(cmd) => Ok(cmd.value),
+                None => return Ok(None),
+            },
+        }
+    }
+
+    // remove the key in map and append log
+    fn remove(&mut self, key: String) -> Result<()> {
+        match self.get_key(key) {
+            Err(err) => {
+                return Err(err);
+            }
+            Ok(cmd) => match cmd {
+                Some(cmd) => {
+                    // cmd must be like set key val
+                    self.update(Command {
+                        op: Operation::Rm,
+                        key: cmd.key,
+                        value: None,
+                    })?;
+                    Ok(())
+                }
+                None => Err(KvStoreError::NotFoundKey)?,
+            },
+        }
+    }
 }
 
 impl KvStore {
@@ -62,62 +106,22 @@ impl KvStore {
             path: p,
             file: f,
             map,
-            lastCompactionTime: SystemTime::now()
+            last_compaction_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
         })
     }
 
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.update(Command {
-            op: Operation::Set,
-            key: Some(key),
-            value: Some(value),
-        })?;
-        Ok(())
-    }
-
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        match self.get_key(key) {
-            Err(err) => {
-                return Err(err);
-            }
-            Ok(cmd) => match cmd {
-                Some(cmd) => Ok(cmd.value),
-                None => return Ok(None),
-            },
-        }
-    }
-
-    // remove the key in map and append log
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        match self.get_key(key) {
-            Err(err) => {
-                return Err(err);
-            }
-            Ok(cmd) => match cmd {
-                Some(cmd) => {
-                    // cmd must be like set key val
-                    self.update(Command {
-                        op: Operation::Rm,
-                        key: cmd.key,
-                        value: None,
-                    })?;
-                    Ok(())
-                }
-                None => Err(KvStoreError::NotFoundKey)?,
-            },
-        }
-    }
+    
     // compaction on condition
     pub fn compaction(&mut self) -> Result<()> {
         if SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            - self.lastCompactionTime
-            > 1
+            - self.last_compaction_time
+            > 10
         {
             let mut all_map = HashMap::new();
             for (key, value) in self.map.iter() {
@@ -143,7 +147,7 @@ impl KvStore {
                 self.map.insert(key, pos);
                 pos += s.bytes().len() as u64 + 1;
             }
-            self.lastCompactionTime = SystemTime::now()
+            self.last_compaction_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();

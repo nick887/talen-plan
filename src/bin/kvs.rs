@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{arg, Command};
+use kvs::kv_engine::KvsEngine;
 use kvs::KvStore;
 use std::process::exit;
 
@@ -23,11 +24,11 @@ fn main() -> Result<()> {
         .subcommand(Command::new("rm").about("rm by key").arg(arg!([KEY])))
         .get_matches();
 
-    let mut kvs = KvStore::open(".")?;
+    let mut kvs = Box::new(KvStore::open(".")?);
     match matches.subcommand() {
         Some(("get", sub)) => match kvs.get(sub.value_of("KEY").unwrap().to_string()) {
             Err(_err) => {
-               //  println!("{}",err);
+                //  println!("{}",err);
                 exit(1);
             }
             Ok(val) => match val {

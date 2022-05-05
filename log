@@ -1,4 +1,2 @@
 {"op":"Set","key":"key1","value":"val1"}
-{"op":"Set","key":"key2","value":"val2"}
 {"op":"Rm","key":"key1","value":null}
-{"op":"Set","key":"key1","value":"val2"}
