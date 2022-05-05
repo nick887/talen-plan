@@ -1,13 +1,15 @@
 use crate::error::KvStoreError;
+use crate::kv_engine::KvsEngine;
 use anyhow::Result;
+use log::info;
 use serde::{Deserialize, Serialize};
+use sled::Db;
 use std::fs::{File, OpenOptions};
 use std::io::SeekFrom;
 use std::io::{BufRead, BufReader, LineWriter, Seek, Write};
 use std::string::String;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, path::PathBuf};
-use crate::kv_engine::KvsEngine;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Operation {
@@ -36,6 +38,54 @@ pub struct KvStore {
     map: HashMap<String, u64>,
     last_compaction_time: u64,
     path: PathBuf,
+}
+
+pub struct SledEngine {
+    db: Db,
+}
+
+impl SledEngine {
+    pub fn open(path: impl Into<PathBuf>) -> Result<SledEngine> {
+        let p = path.into();
+        info!("dir of log file: {:?}", p);
+        let db = sled::open(&p)?;
+        Ok(SledEngine { db })
+    }
+}
+
+impl KvsEngine for SledEngine {
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        self.db.insert(key.as_str(), value.as_str())?;
+        self.db.flush()?;
+        Ok(())
+    }
+
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        let val = self.db.get(&key)?;
+        match val {
+            Some(val) => {
+                let mut x = val.to_vec();
+                let res = x.as_mut_slice();
+                let res = std::str::from_utf8(res)?.to_string();
+                Ok(Some(res))
+            }
+            None => Ok(None),
+        }
+    }
+
+    // remove the key in map and append log
+    fn remove(&mut self, key: String) -> Result<()> {
+        let val = self.db.remove(key.as_str())?;
+        self.db.flush()?;
+        match val {
+            Some(_) => {
+                Ok(())
+            },
+            None => {
+                Err(KvStoreError::NotFoundKey)?
+            }
+        }
+    }
 }
 
 impl KvsEngine for KvStore {
@@ -113,7 +163,6 @@ impl KvStore {
         })
     }
 
-    
     // compaction on condition
     pub fn compaction(&mut self) -> Result<()> {
         if SystemTime::now()

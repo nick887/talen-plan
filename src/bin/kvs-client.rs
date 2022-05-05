@@ -8,6 +8,7 @@ use std::{
 };
 use env_logger::Builder;
 use env_logger::Target;
+use std::process::exit;
 
 fn main() -> Result<()> {
     let mut builder = Builder::from_default_env();
@@ -88,10 +89,13 @@ fn main() -> Result<()> {
             let res = proc::deserialize(s.to_string())?;
             if res != "Ok\n" {
                 error!("{}", res);
+                exit(1);
             }
-            print!("{}", res);
         }
-        _ => println!("error"),
+        _ => {
+            error!("need command");
+            exit(1);
+        },
     }
 
     Ok(())

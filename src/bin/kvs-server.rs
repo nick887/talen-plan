@@ -2,15 +2,23 @@ use anyhow::Result;
 use clap::{arg, Command};
 use env_logger::Builder;
 use env_logger::Target;
+use kvs::kv::SledEngine;
+use kvs::proc;
 use kvs::{kv_engine, KvStore};
+use log::error;
 use log::info;
+use std::fs;
 use std::io::Write;
+use std::process::exit;
 use std::{
     io::Read,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
 };
-
-use kvs::proc;
+enum Engine {
+    Sled,
+    Kv,
+    NotDefined,
+}
 
 fn main() -> Result<()> {
     let mut builder = Builder::from_default_env();
@@ -25,15 +33,46 @@ fn main() -> Result<()> {
         .get_matches();
 
     let mut kv_engine: Box<dyn kv_engine::KvsEngine>;
-    kv_engine = Box::new(KvStore::open(".")?);
+    let mut engine_type: Engine = Engine::Sled;
+    let mut dir_empty = true;
+    // verify the engine is same
+    for entry in fs::read_dir(".")? {
+        let dir = entry?;
+        if dir.path().as_path().to_str().unwrap() == "./log" {
+            dir_empty = false;
+            println!("{:?}",dir.path().to_str().unwrap());
+            engine_type = Engine::Kv;
+        }else if dir.path().as_path().to_str().unwrap() == "./db" {
+            dir_empty = false;
+        }
+    }
+    if dir_empty {
+        engine_type = Engine::NotDefined;
+    }
     // engine
     if let Some(engine) = matches.value_of("engine") {
-        if engine == "kvs" {
+        if engine == "sled" {
+            match engine_type {
+                Engine::Kv => {
+                    error!("not same engine");
+                    exit(1);
+                }
+                _ => {}
+            }
+            // sled
+            kv_engine = Box::new(SledEngine::open(".")?);
+        } else {
+            match engine_type {
+                Engine::Sled => {
+                    error!("not same engine");
+                    exit(1);
+                }
+                _ => {}
+            }
             kv_engine = Box::new(KvStore::open(".")?);
-        } else if engine == "serd" {
-            // serd
-            // kv_engine =
         }
+    } else {
+        kv_engine = Box::new(KvStore::open(".")?);
     }
     // addr
     let mut socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 4000);
